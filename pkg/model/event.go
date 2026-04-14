@@ -5,7 +5,9 @@ import(
 	"time"
 )
 
-type EventType string const(
+type EventType string 
+
+const(
 	EventTypeStock		EventType = "stock"
 	EventTypeClick 		EventType = "click"
 	EventTypeTelemetry 	EventType = "telemetry"
@@ -28,7 +30,7 @@ type StockPayload struct {
 }
 
 type ClickPayload struct {
-	UsedID 		string		`json:"used_id"`
+	UserID 		string		`json:"user_id"`
 	SessionID 	string 		`json:"session_id"`
 	PageURL 	string 		`json:"page_url"`
 	Element 	string 		`json:"element"`		
