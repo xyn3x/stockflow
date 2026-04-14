@@ -10,18 +10,18 @@ import(
 
 type SimulatorConfig struct {
 	type Server struct {
-		Addr  string  `yaml:addr` 
-	} `yaml:server`
+		Addr  string  `yaml:"addr"` 
+	} `yaml:"server"`
 	
 	type Generator struct {
-		TickInterval 	time.Time	`yaml:tick_interval`	
-		StockTickers 	[]string	`yaml:stock_tickers`
-		ClickUsers		int			`yaml:click_users`
-		TelemetryApps	[]string	`yaml:telemetry_apps`
-		StockRatio		float64		`yaml:stock_ratio`
-		ClickRatio		float64		`yaml:click_ratio`
-		TelemetryRatio	float64		`yaml:telemetry_ratio`
-	} `yaml:generator`
+		TickInterval 	time.Time	`yaml:"tick_interval"`	
+		StockTickers 	[]string	`yaml:"stock_tickers"`
+		ClickUsers		int			`yaml:"click_users"`
+		TelemetryApps	[]string	`yaml:"telemetry_apps"`
+		StockRatio		float64		`yaml:"stock_ratio"`
+		ClickRatio		float64		`yaml:"click_ratio"`
+		TelemetryRatio	float64		`yaml:"telemetry_ratio"`
+	} `yaml:"generator"`
 }
 
 func LoadSimulator(string path) (*SimulatorConfig, error) {
