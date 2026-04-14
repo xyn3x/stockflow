@@ -23,13 +23,13 @@ func main() {
 		log.Fatal("Config is not loaded", zap.Error(err))
 	}
 
-	genConfig := &simulator.GeneratorConfig {
+	genConfig := simulator.GeneratorConfig {
 		StockTickers: 	cfg.Generator.StockTickers,
 		ClickUsers:		cfg.Generator.ClickUsers,
-		TelemetryApps 	cfg.Generator.TelemetryApps,
-		StockRatio		cfg.Generator.StockRatio,
-		ClickRatio		cfg.Generator.ClickRatio,
-		TelemetryRatio	cfg.Generator.TelemetryRatio,
+		TelemetryApps: 	cfg.Generator.TelemetryApps,
+		StockRatio:		cfg.Generator.StockRatio,
+		ClickRatio:		cfg.Generator.ClickRatio,
+		TelemetryRatio:	cfg.Generator.TelemetryRatio,
 	}
 	gen := simulator.NewGenerator(genConfig, log)
 
@@ -37,8 +37,7 @@ func main() {
 	if interval == 0 {
 		interval = 100 * time.Millisecond
 	}
-
-	srv := server.NewServer(gen, interval, log)
+	srv := simulator.NewServer(gen, interval, log)
 
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
@@ -46,7 +45,7 @@ func main() {
 	go srv.Run(ctx)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ws", srv)
+	mux.Handle("/ws", srv)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

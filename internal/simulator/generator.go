@@ -21,7 +21,7 @@ type stockState struct {
 
 type Generator struct {
 	log 	*zap.Logger
-	mu 		*sync.Mutex
+	mu 		sync.Mutex
 	stocks 	[]*stockState
 	users 	[]string 
 	apps	[]string 
@@ -105,7 +105,7 @@ func (gen *Generator) StockEvent() model.Event {
 		Volume: 	int64(gen.seed.Intn(10000) + 100),
 	}
 
-	return gen.wrap(model.EventTypeStock, payload)
+	return gen.wrap(model.EventTypeClick, payload)
 }
 
 func (gen *Generator) ClickEvent() model.Event {
@@ -177,7 +177,7 @@ func seedPrice(tick string) float64 {
 		"NVDA": 875.00, "BTC":  68000.0, "ETH":  3500.0,
 	}
 
-	if prc, err := seeds[tick]; err {
+	if prc, ok := seeds[tick]; ok {
 		return prc 
 	}
 

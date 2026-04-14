@@ -28,7 +28,7 @@ type client struct {
 
 type Server struct {
 	log 		*zap.Logger 
-	mu 			*sync.RWMutex 
+	mu 			sync.RWMutex 
 	gen 		*Generator 
 	interval 	time.Duration 
 
