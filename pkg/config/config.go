@@ -33,6 +33,38 @@ func LoadSimulator(path string) (*SimulatorConfig, error) {
 	return cfg, load(path, cfg)
 }
 
+type IngestionConfig struct {
+	Source struct {
+		WebSocketURL 	string 			`yaml:"websocket_url"`
+		ReconnectDelay 	time.Duration 	`yaml:"reconnect_delay"`
+		MaxReconnects	int 			`yaml:"max_reconnects"`
+		PingInterval 	time.Duration 	`yaml:"ping_interval"`
+	} `yaml:"source"`
+
+	NATS struct {	
+		URL				string 			`yaml:"url"`
+		ConnectTimeout	time.Duration 	`yaml:"connect_timeout"`
+		MaxReconnects	int				`yaml:"max_reconnects"`
+		StreamName		string			`yaml:"stream_name"`
+		StreamSubjects	[]string		`yaml:"stream_subjects"`
+		StreamMaxAge	time.Duration	`yaml:"stream_max_age"`
+		StreamMaxBytes	int64			`yaml:"stream_max_bytes"`
+	} `yaml:"nats"`
+
+	Publisher struct {
+		BatchSize		int				`yaml:"batch_size"`
+		FlushTimeout	time.Duration	`yaml:"flush_timeout"`
+	} `yaml:"publisher"`
+}
+
+func LoadIngestion(path string)	(*IngestionConfig, error) {
+	if env_path := os.Getenv("INGESTION_CONFIG"); env_path != "" {
+		path = env_path 
+	}
+	cfg := &IngestionConfig{}
+	return cfg, load(path, cfg)
+} 
+
 func load(path string, cfg interface{}) error {
 	f, err := os.Open(path)
 

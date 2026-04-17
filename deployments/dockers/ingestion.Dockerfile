@@ -13,17 +13,16 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
-    -o /bin/simulator \
-    ./cmd/simulator
+    -o /bin/ingestion \
+    ./cmd/ingestion
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM alpine:3.20
 
 RUN apk add --no-cache wget
 
-COPY --from=builder /bin/simulator /simulator
-COPY configs/simulator.yaml /configs/simulator.yaml
+COPY --from=builder /bin/ingestion /ingestion
+COPY configs/ingestion.yaml /configs/ingestion.yaml
 
-EXPOSE 8081
-ENV SIMULATOR_CONFIG_PATH=/configs/simulator.yaml
-ENTRYPOINT ["/simulator"]
+ENV INGESTION_CONFIG_PATH=/configs/ingestion.yaml
+ENTRYPOINT ["/ingestion"]

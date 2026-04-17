@@ -49,7 +49,7 @@ func NewGenerator(cfg GeneratorConfig, log *zap.Logger) *Generator {
 		stocks[pos] = &stockState {
 			ticker: tick,
 			price: seedPrice(tick),
-			volatility: 0.015 * rand.Float64() * 0.025,
+			volatility: 0.015 + rand.Float64() * 0.025,
 		}
 	}
 
@@ -105,7 +105,7 @@ func (gen *Generator) StockEvent() model.Event {
 		Volume: 	int64(gen.seed.Intn(10000) + 100),
 	}
 
-	return gen.wrap(model.EventTypeClick, payload)
+	return gen.wrap(model.EventTypeStock, payload)
 }
 
 func (gen *Generator) ClickEvent() model.Event {
@@ -119,7 +119,7 @@ func (gen *Generator) ClickEvent() model.Event {
 		Element: 	elements[gen.seed.Intn(len(elements))],
 	}
 	
-	return gen.wrap(model.EventTypeTelemetry, payload)
+	return gen.wrap(model.EventTypeClick, payload)
 }
 
 func (gen *Generator) TelemetryEvent() model.Event {
@@ -129,7 +129,7 @@ func (gen *Generator) TelemetryEvent() model.Event {
 		base  float64
 		noise float64
 	}{
-		{"http.request```_duration_ms", "ms", 45, 30},
+		{"http.request_duration_ms", "ms", 45, 30},
 		{"http.requests_per_second", "rps", 250, 80},
 		{"memory.usage_bytes", "bytes", 256e6, 50e6},
 		{"cpu.usage_percent", "percent", 35, 20},
