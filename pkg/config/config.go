@@ -65,6 +65,34 @@ func LoadIngestion(path string)	(*IngestionConfig, error) {
 	return cfg, load(path, cfg)
 } 
 
+type ProcessorConfig struct {
+	NATS struct {
+		URL 			string 			`yaml:"url"`
+		ConnectTimeout	time.Duration 	`yaml:"connect_timeout"`
+		StreamName 		string 			`yaml:"stream_name"`
+		ConsumerName 	string 			`yaml:"consumer_name"`
+		FilterSubject 	string 			`yaml:"filter_subject"`
+	} `yaml:"nats"`
+
+	Pipeline struct {
+		MovingAvgWindow int 	`yaml:"moving_avg_window"`
+		TopK			int 	`yaml:"top_k"`
+	} `yaml:"pipeline"`
+
+	Worker struct {
+		FetchBatch		int 			`yaml:"fetch_batch"`
+		FetchTimeout	time.Duration 	`yaml:"fetch_timeout"`
+	} `yaml:"worker"`
+}
+
+func LoadProcessor(path string) (*ProcessorConfig, error) {
+	if env_path := os.Getenv("PROCESSOR_CONFIG"); env_path != "" {
+		path = env_path 
+	}
+	cfg := &ProcessorConfig{}
+	return cfg, load(path, cfg)
+}
+
 func load(path string, cfg interface{}) error {
 	f, err := os.Open(path)
 
