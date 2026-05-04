@@ -24,5 +24,5 @@ RUN apk add --no-cache wget
 COPY --from=builder /bin/ingestion /ingestion
 COPY configs/ingestion.yaml /configs/ingestion.yaml
 
-ENV INGESTION_CONFIG_PATH=/configs/ingestion.yaml
+ENV INGESTION_CONFIG=/configs/ingestion.yaml
 ENTRYPOINT ["/ingestion"]

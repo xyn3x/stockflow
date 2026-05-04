@@ -13,7 +13,7 @@ type Throughput struct {
 	windowTs 	time.Time 
 }
 
-func NewTroughput() *Throughput {
+func NewThroughput() *Throughput {
 	return &Throughput{ windowTs: time.Now() }
 }
 

@@ -40,6 +40,18 @@ services:
       nats:
         condition: service_healthy
     restart: unless-stopped
+  processor:
+    build:
+      context: .
+      dockerfile: deployments/dockers/processor.Dockerfile
+    environment:
+      - LOG_LEVEL=debug
+    depends_on:
+      simulator:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
 networks:
   default:
     name: stockflow

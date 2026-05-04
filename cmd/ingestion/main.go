@@ -41,8 +41,8 @@ func main() {
 		MaxReconnects: 	cfg.NATS.MaxReconnects, 
 		StreamName: 	streamName, 
 		StreamSubjects: streamSubjects, 
-		StreamMaxAge:	cfg.NATS.MaxAge, 
-		StreamMaxBytes:	cfg.NATS.MaxBytes,
+		StreamMaxAge:	cfg.NATS.StreamMaxAge, 
+		StreamMaxBytes:	cfg.NATS.StreamMaxBytes,
 		BatchSize:	 	cfg.Publisher.BatchSize, 
 		FlushTimeout: 	cfg.Publisher.FlushTimeout,
 	}

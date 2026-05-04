@@ -25,5 +25,5 @@ COPY --from=builder /bin/simulator /simulator
 COPY configs/simulator.yaml /configs/simulator.yaml
 
 EXPOSE 8081
-ENV SIMULATOR_CONFIG_PATH=/configs/simulator.yaml
+ENV SIMULATOR_CONFIG=/configs/simulator.yaml
 ENTRYPOINT ["/simulator"]

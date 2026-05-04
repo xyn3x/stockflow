@@ -33,7 +33,7 @@ func New(windowSz, k int, log *zap.Logger) *Pipeline {
 		movingAvg: 	aggregation.NewMovingAverage(windowSz), 
 		topK: 		aggregation.NewTopK(k), 
 		volatility: aggregation.NewVolatility(), 
-		throughput: metrics.NewTroughput(), 
+		throughput: metrics.NewThroughput(), 
 		latency: 	metrics.NewLatency(),
 	}
 }
