@@ -13,7 +13,16 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
-
+  redis: 
+    image: redis:7-alpine 
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped 
   simulator:
     build:
       context: .
@@ -50,6 +59,20 @@ services:
       simulator:
         condition: service_healthy
       nats:
+        condition: service_healthy
+    restart: unless-stopped
+  api: 
+    build:
+      context: .
+      dockerfile: deployments/dockers/api.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - LOG_LEVEL=debug
+    depends_on:
+      nats:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: unless-stopped
 networks:

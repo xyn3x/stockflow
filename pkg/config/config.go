@@ -93,6 +93,33 @@ func LoadProcessor(path string) (*ProcessorConfig, error) {
 	return cfg, load(path, cfg)
 }
 
+type APIConfig struct {
+	Server struct {
+		Addr string `yaml:"addr"`
+	} `yaml:"server"`
+	
+	NATS struct {
+		URL 			string			`yaml:"url"`
+		ConnectTimeout	time.Duration 	`yaml:"connect_timeout"`
+		StreamName		string 			`yaml:"stream_name"`
+		ConsumerName	string 			`yaml:"consumer_name"`
+	} `yaml:"nats"`
+
+	Reddis struct {
+		Addr 		string 	`yaml:"addr"`
+		Password	string 	`yaml:"password"`
+		DB			int 	`yaml:"db"`
+	} `yaml:"reddis"`
+}
+
+func LoadAPI(path string) (*APIConfig, error) {
+	if env_path := os.Getenv("API_CONFIG"); env_path != "" {
+		path = env_path 
+	}
+	cfg := &APIConfig{}
+	return cfg, load(path, cfg)
+}
+
 func load(path string, cfg interface{}) error {
 	f, err := os.Open(path)
 
