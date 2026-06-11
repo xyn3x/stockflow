@@ -111,7 +111,11 @@ func (s *Subscriber) handle(ctx context.Context, msg jetstream.Msg) {
 		msg.Nak()
 		return 
 	}
-
+	s.log.Info(
+        "received event",
+        zap.String("type", string(res.EventType)),
+        zap.Any("metrics", res.Metrics),
+    )
 	s.hub.Broadcast(res)
 
 	if err := s.persist(ctx, res); err != nil {

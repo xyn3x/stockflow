@@ -105,11 +105,11 @@ type APIConfig struct {
 		ConsumerName	string 			`yaml:"consumer_name"`
 	} `yaml:"nats"`
 
-	Reddis struct {
+	Redis struct {
 		Addr 		string 	`yaml:"addr"`
 		Password	string 	`yaml:"password"`
 		DB			int 	`yaml:"db"`
-	} `yaml:"reddis"`
+	} `yaml:"redis"`
 }
 
 func LoadAPI(path string) (*APIConfig, error) {

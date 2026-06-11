@@ -144,6 +144,13 @@ func (w *Worker) handleMessage(msg jetstream.Msg) {
 		return 
 	}
 
+	data, err := json.Marshal(res)
+	if err == nil {
+		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		w.js.Publish(pubCtx, "events.processed", data)
+	}
+	
 	w.log.Debug("event processed", 
 		zap.String("id", res.EventID),
 		zap.String("type", string(res.EventType)), 

@@ -24,5 +24,6 @@ RUN apk add --no-cache wget
 COPY --from=builder /bin/api /api
 COPY configs/api.yaml /configs/api.yaml
 
+EXPOSE 8080
 ENV API_CONFIG=/configs/api.yaml
 ENTRYPOINT ["/api"]

@@ -17,7 +17,7 @@ func main() {
 	log := logger.New("simulator")
 	defer log.Sync()
 
-	cfgPath := utils.EnvOrDefault("SIMULATOR_CONFIG_PATH", "configs/simulator.yaml")
+	cfgPath := utils.EnvOrDefault("SIMULATOR_CONFIG", "configs/simulator.yaml")
 	cfg, err := config.LoadSimulator(cfgPath)
 	if err != nil {
 		log.Fatal("Config is not loaded", zap.Error(err))

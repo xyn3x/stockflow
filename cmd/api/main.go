@@ -61,7 +61,7 @@ func main() {
 	rest := handler.NewREST(st, hub, log)
 	mux := http.NewServeMux()
 	rest.RegisterRoutes(mux)
-	mux.handle("/ws", hub)
+	mux.Handle("/ws", hub)
 
 	addr := cfg.Server.Addr 
 	if addr == "" {
