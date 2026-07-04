@@ -1,0 +1,114 @@
+{
+    "title": "StockFlow",
+    "uid": "stockflow-main",
+    "schemaVersion": 38,
+    "refresh": "5s",
+    "time": { "from": "now-5m", "to": "now" },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Events per second (ingestion)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(stockflow_events_total{service=\"ingestion\",status=\"published\"}[30s])",
+            "legendFormat": "{{ type }}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Events per second (processor)",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(stockflow_events_total{service=\"processor\",status=\"processed\"}[30s])",
+            "legendFormat": "{{ type }}"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Processing latency (p50 / p95 / p99)",
+        "type": "timeseries",
+        "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(stockflow_processing_duration_seconds_bucket{service=\"processor\"}[30s])) by (le))",
+            "legendFormat": "p50"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(stockflow_processing_duration_seconds_bucket{service=\"processor\"}[30s])) by (le))",
+            "legendFormat": "p95"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(stockflow_processing_duration_seconds_bucket{service=\"processor\"}[30s])) by (le))",
+            "legendFormat": "p99"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Dropped events",
+        "type": "timeseries",
+        "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+        "targets": [
+          {
+            "expr": "rate(stockflow_events_dropped_total[30s])",
+            "legendFormat": "{{ service }} / {{ reason }}"
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "WebSocket clients connected",
+        "type": "stat",
+        "gridPos": { "x": 0, "y": 16, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "stockflow_ws_clients_connected{service=\"api\"}",
+            "legendFormat": "clients"
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "NATS consumer lag",
+        "type": "stat",
+        "gridPos": { "x": 6, "y": 16, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "stockflow_nats_consumer_lag",
+            "legendFormat": "{{ service }}"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Total events processed",
+        "type": "stat",
+        "gridPos": { "x": 12, "y": 16, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(stockflow_events_total{status=\"processed\"})",
+            "legendFormat": "total"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Total events published",
+        "type": "stat",
+        "gridPos": { "x": 18, "y": 16, "w": 6, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(stockflow_events_total{status=\"published\"})",
+            "legendFormat": "total"
+          }
+        ]
+      }
+    ]
+  }
+  

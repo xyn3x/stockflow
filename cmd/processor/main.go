@@ -2,12 +2,14 @@ package main
 
 import(
 	"os"
+	"net/http"
 
 	"github.com/xyn3x/stockflow/internal/processor/pipeline"
 	"github.com/xyn3x/stockflow/internal/processor/worker"
 	"github.com/xyn3x/stockflow/pkg/config"
 	"github.com/xyn3x/stockflow/pkg/logger"
 	"github.com/xyn3x/stockflow/pkg/utils"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -20,6 +22,14 @@ func main() {
 	if err != nil {
 		log.Fatal("error: config is not loaded", zap.Error(err))
 	}
+
+	m := metrics.New("processor")
+	
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		http.ListenAndServe(":9092", mux)
+	}()
 
 	pl := pipeline.New(
 		cfg.Pipeline.MovingAvgWindow, 
@@ -36,12 +46,12 @@ func main() {
 		FetchBatch:		cfg.Worker.FetchBatch,
 		FetchTimeout:	cfg.Worker.FetchTimeout,
 	}
-	wr, err := worker.New(wrCfg, pl, log)
+	wr, err := worker.New(wrCfg, pl, log, m)
 	if err != nil {
 		log.Fatal("error: worker initialization", zap.Error(err))
 	}
 	defer wr.Close()
-	
+
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
 
@@ -54,6 +64,7 @@ func main() {
 		log.Error("worker error", zap.Error(err))
 		os.Exit(1)
 	}
+	
 
 	log.Info("processor shut down successfully")
 }

@@ -8,6 +8,7 @@ import(
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -26,12 +27,14 @@ type client struct {
 type Hub struct {
 	log 	*zap.Logger 
 	mu 		sync.RWMutex 
+	m 		*metrics.Metrics
 	clients map[*client] struct{}
 }
 
-func NewHub(log *zap.Logger) *Hub {
+func NewHub(log *zap.Logger, m *metrics.Metrics) *Hub {
 	return &Hub {
 		log: log, 
+		m:	 m,
 		clients: make(map[*client] struct{}),
 	}
 }
@@ -130,12 +133,14 @@ func (h *Hub) readPump(cl *client) {
 func (h *Hub) register(cl *client) {
 	h.mu.Lock()
 	h.clients[cl] = struct{}{}
+	h.m.WSClients.Inc()
 	h.mu.Unlock()
 }
 
 func (h *Hub) unregister(cl *client) {
 	h.mu.Lock()
 	delete(h.clients, cl)
+	h.m.WSClients.Dec()
 	h.mu.Unlock()
 }
 

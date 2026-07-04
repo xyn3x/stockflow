@@ -3,6 +3,7 @@ package main
 import(
 	"os"
 	"time"
+	"net/http"
 
 	ingestws "github.com/xyn3x/stockflow/internal/ingestion/websocket"
 	"github.com/xyn3x/stockflow/internal/ingestion/parser"
@@ -10,6 +11,7 @@ import(
 	"github.com/xyn3x/stockflow/pkg/config"
 	"github.com/xyn3x/stockflow/pkg/logger"
 	"github.com/xyn3x/stockflow/pkg/utils"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -60,7 +62,6 @@ func main() {
 	}
 	wsClient := ingestws.NewClient(wsCfg, log)
 
-
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
 
@@ -81,17 +82,27 @@ func main() {
 	go pub.Run(ctx)
 
 	log.Info("Ingestion service is starting", zap.String("source", cfg.Source.WebSocketURL), zap.String("nats", cfg.NATS.URL))
+	
+
+	m := metrics.New("ingestion")
+	go func() {
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", metrics.Handler())
+		http.ListenAndServe(":9091", mux)
+	}()
 
 	handler := func(data []byte) {
 		msg, err := prc.Parse(data)
 		if err != nil {
 			log.Debug("Parser error", zap.Error(err), zap.Int("bytes", len(data)))
+			m.EventsDropped.WithLabelValues("ingestion", "parse_error").Inc()
 			return 
 		}
 		log.Info("Event is parsed", 
 			zap.String("id", msg.Event.ID), 
 			zap.String("event", string(msg.Event.Type)), 
 			zap.Duration("latency", msg.ParseLatency))
+		m.EventsTotal.WithLabelValues("ingestion", string(msg.Event.Type), "published").Inc()
 		pub.Publish(msg.Event)
 	}
 

@@ -8,6 +8,7 @@ import(
 	"context"
 	
 	"github.com/xyn3x/stockflow/pkg/model"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
@@ -31,15 +32,16 @@ type Server struct {
 	mu 			sync.RWMutex 
 	gen 		*Generator 
 	interval 	time.Duration 
-
+	m 			*metrics.Metrics
 	clients 	map[*client] struct {}
 }
 
-func NewServer (gen *Generator, interval time.Duration, log *zap.Logger) *Server {
+func NewServer (gen *Generator, interval time.Duration, log *zap.Logger, m *metrics.Metrics) *Server {
 	return &Server {
 		log: log, 
 		gen: gen, 
 		interval: interval, 
+		m:	m,
 		clients: make(map[*client] struct{}),
 	}
 }
@@ -68,6 +70,7 @@ func (s *Server) broadcast(event model.Event) {
 
 	if err != nil {
 		s.log.Error("JSON Marshal error occured", zap.Error(err))
+		s.m.EventsDropped.WithLabelValues("simulator", "parse_error").Inc()
 		return 
 	}
 
@@ -81,6 +84,7 @@ func (s *Server) broadcast(event model.Event) {
 			s.log.Warn("Slow Client, dropping frame", zap.String("remote", cur.conn.RemoteAddr().String()))
 		}
 	}
+	s.m.EventsTotal.WithLabelValues("simulator", string(event.Type), "generated").Inc()
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

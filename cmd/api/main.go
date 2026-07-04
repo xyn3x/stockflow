@@ -13,6 +13,7 @@ import(
 	"github.com/xyn3x/stockflow/pkg/config"
 	"github.com/xyn3x/stockflow/pkg/logger"
 	"github.com/xyn3x/stockflow/pkg/utils"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +26,6 @@ func main() {
 	if err != nil {
 		log.Fatal("load config", zap.Error(err))
 	}
-
 	st := store.New(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
@@ -36,7 +36,9 @@ func main() {
 	defer st.Close()
 	log.Info("reddis connected", zap.String("addr", cfg.Redis.Addr))
 
-	hub := apiws.NewHub(log)
+	m := metrics.New("api")
+
+	hub := apiws.NewHub(log, m)
 	go hub.Run(ctx)
 
 	sub, err := handler.NewSubscriber(
@@ -62,6 +64,7 @@ func main() {
 	mux := http.NewServeMux()
 	rest.RegisterRoutes(mux)
 	mux.Handle("/ws", hub)
+	mux.Handle("/metrics", metrics.Handler())
 
 	addr := cfg.Server.Addr 
 	if addr == "" {

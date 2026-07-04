@@ -10,6 +10,7 @@ import(
 	"github.com/xyn3x/stockflow/pkg/config"
 	"github.com/xyn3x/stockflow/pkg/logger"
 	"github.com/xyn3x/stockflow/pkg/utils"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -33,11 +34,13 @@ func main() {
 	}
 	gen := simulator.NewGenerator(genConfig, log)
 
+	m := metrics.New("simulator")
+
 	interval := cfg.Generator.TickInterval
 	if interval == 0 {
 		interval = 100 * time.Millisecond
 	}
-	srv := simulator.NewServer(gen, interval, log)
+	srv := simulator.NewServer(gen, interval, log, m)
 
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
@@ -50,6 +53,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
+	mux.Handle("/metrics", metrics.Handler())
 
 	addr := cfg.Server.Addr 
 	if addr == "" {

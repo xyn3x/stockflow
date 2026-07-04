@@ -8,9 +8,11 @@ import(
 
 	"github.com/xyn3x/stockflow/internal/processor/pipeline"
 	"github.com/xyn3x/stockflow/pkg/model"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/zap"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type Config struct {
@@ -29,9 +31,11 @@ type Worker struct {
 	pipeline	*pipeline.Pipeline 
 	nc 			*nats.Conn
 	js 			jetstream.JetStream 
+	m			*metrics.Metrics
+	consumer	jetstream.Consumer
 }
 
-func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger) (*Worker, error) {
+func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger, m *metrics.Metrics) (*Worker, error) {
 	if cfg.FetchBatch <= 0 {
 		cfg.FetchBatch = 50 
 	}
@@ -72,6 +76,7 @@ func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger) (*Worker, error) {
 		pipeline: 	pl, 
 		nc: 		nc, 
 		js: 		js, 
+		m:			m,
 	}, nil
 }
 
@@ -80,6 +85,7 @@ func (w *Worker) Run(ctx context.Context) error {
 	if err != nil {
 		return err 
 	}
+	w.consumer = consumer 
 
 	w.log.Info("Processor worker started", 
 		zap.String("stream", w.cfg.StreamName), 
@@ -99,6 +105,10 @@ func (w *Worker) Run(ctx context.Context) error {
 					zap.Uint64("total_processed", total),
 					zap.Duration("avg_latency", avgLat),
 					zap.Duration("max_latency", maxLat))
+
+				if info, err := w.consumer.Info(ctx); err == nil {
+					w.m.NATSLag.Set(float64(info.NumPending))
+				}
 			}
 		}
 	}()
@@ -134,12 +144,18 @@ func (w *Worker) handleMessage(msg jetstream.Msg) {
 		return 
 	}
 
+	timer := prometheus.NewTimer(
+		w.m.ProcessingTime.WithLabelValues("processor", string(event.Type)),
+	)
+	defer timer.ObserveDuration()
+
 	res, err := w.pipeline.Process(event)
 	if err != nil {
 		w.log.Error("pipeline process", 
 			zap.String("id", event.ID), 
 			zap.String("type", string(event.Type)), 
 			zap.Error(err))
+		w.m.EventsDropped.WithLabelValues("processor", "pipeline_process_error").Inc()
 		msg.Nak()
 		return 
 	}
@@ -155,6 +171,7 @@ func (w *Worker) handleMessage(msg jetstream.Msg) {
 		zap.String("id", res.EventID),
 		zap.String("type", string(res.EventType)), 
 		zap.Any("metrics", res.Metrics))
+	w.m.EventsTotal.WithLabelValues("processor", string(event.Type), "processed").Inc()
 	msg.Ack()
 }
 

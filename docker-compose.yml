@@ -75,6 +75,42 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ./deployments/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    restart: unless-stopped 
+  grafana:
+    image: grafana/grafana:10.4.0
+    volumes:
+      - ./deployments/grafana/provisioning:/etc/grafana/provisioning
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    depends_on:
+      - prometheus
+    restart: unless-stopped 
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis
+    restart: unless-stopped
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    command: ["-varz", "http://nats:8222"]
+    ports:
+      - "7777:7777"
+    depends_on:
+      - nats 
+    restart: unless-stopped
 networks:
   default:
     name: stockflow

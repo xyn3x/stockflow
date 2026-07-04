@@ -17,8 +17,7 @@ type Metrics struct {
 }
 
 func New(service string) *Metrics {
-	labels := prometheus.Labels{"service": service}
-
+	
 	return &Metrics {
 		EventsTotal: promauto.NewCounterVec(prometheus.CounterOpts{
 			Namespace: 	"stockflow", 
@@ -55,6 +54,6 @@ func New(service string) *Metrics {
 	}
 }
 
-func Handle() http.Handler {
+func Handler() http.Handler {
 	return promhttp.Handler()
 }
