@@ -5,12 +5,14 @@ import(
 	"time"
 	"encoding/json"
 	"context"
-
+	"sync"
+	
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/xyn3x/stockflow/internal/api/store"
 	apiws "github.com/xyn3x/stockflow/internal/api/websocket"
 	"github.com/xyn3x/stockflow/pkg/model"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"go.uber.org/zap"
 )
 
@@ -27,10 +29,17 @@ type Subscriber struct {
 	js 			jetstream.JetStream 
 	hub 		*apiws.Hub 
 	store 		*store.Store 
+	m			*metrics.Metrics
 	streamName 		string 
 	consumerName 	string 
+	consumer 		jetstream.Consumer
+	numWorkers 		int
 }
 
+type pendingPersist struct {
+	msg jetstream.Msg 
+	res ProcessedResult
+}
 
 func NewSubscriber(
 	natsURL string,
@@ -38,7 +47,9 @@ func NewSubscriber(
 	streamName, consumerName string, 
 	hub *apiws.Hub, 
 	store *store.Store, 
+	m *metrics.Metrics,
 	log *zap.Logger, 
+	numWorkers int,
 ) (*Subscriber, error) {
 	opts := []nats.Option{
 		nats.Name("api-gateaway"),
@@ -70,8 +81,10 @@ func NewSubscriber(
 		js: js, 
 		hub: hub, 
 		store: store, 
+		m : m,
 		streamName: streamName, 
 		consumerName: consumerName,
+		numWorkers:	numWorkers,
 	}, nil
 }
 
@@ -80,8 +93,24 @@ func (s *Subscriber) Run(ctx context.Context) error {
 	if err != nil {
 		return err 
 	}
+	s.consumer = consumer 
 
 	s.log.Info("api consumer started", zap.String("stream", s.streamName), zap.String("consumer", s.consumerName))
+
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return 
+			case <-ticker.C:
+				if info, err := s.consumer.Info(ctx); err == nil {
+					s.m.NATSLag.Set(float64(info.NumPending))
+				}
+			}
+		}
+	}()
 
 	for {
 		if ctx.Err() != nil {
@@ -98,19 +127,49 @@ func (s *Subscriber) Run(ctx context.Context) error {
 			continue 
 		}
 
-		for msg := range msgs.Messages() {
-			s.handle(ctx, msg) 
+		msgCh := make(chan jetstream.Msg, 50)
+		pendingCh := make(chan pendingPersist, 50)
+
+		var wg sync.WaitGroup 
+		for i := 0; i < s.numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for msg := range msgCh {
+					if pp, ok := s.process(msg); ok {
+						pendingCh <- pp 
+					}
+				}
+			}()
 		}
+
+		for msg := range msgs.Messages() {
+			msgCh <- msg 
+		}
+		close(msgCh)
+
+		go func() {
+			wg.Wait()
+			close(pendingCh)
+		}()
+
+		pending := make([]pendingPersist, 0, 50)
+		for pp := range pendingCh {
+			pending = append(pending, pp)
+		}
+
+		s.persistBatch(ctx, pending)
 	}
 }
 
-func (s *Subscriber) handle(ctx context.Context, msg jetstream.Msg) {
+func (s *Subscriber) process(msg jetstream.Msg) (pendingPersist, bool) {
 	var res ProcessedResult 
 	if err := json.Unmarshal(msg.Data(), &res); err != nil {
 		s.log.Error("unmarshal res", zap.Error(err))
 		msg.Nak()
-		return 
+		return pendingPersist{}, false
 	}
+
 	s.log.Info(
         "received event",
         zap.String("type", string(res.EventType)),
@@ -118,13 +177,32 @@ func (s *Subscriber) handle(ctx context.Context, msg jetstream.Msg) {
     )
 	s.hub.Broadcast(res)
 
-	if err := s.persist(ctx, res); err != nil {
-		s.log.Warn("redis persist", zap.Error(err))
-	}
-	msg.Ack()
+	return pendingPersist{msg: msg, res : res}, true
 }
 
-func (s *Subscriber) persist(ctx context.Context, r ProcessedResult) error {
+func (s *Subscriber) persistBatch(ctx context.Context, pending []pendingPersist) {
+	if len(pending) == 0 {
+		return 
+	}
+
+	items := make([]store.KV, 0, len(pending) * 2)
+	for _, pp := range pending {
+		items = append(items, s.kvFor(pp.res)...)
+	}
+
+	if err := s.store.BatchSet(ctx, items); err != nil {
+		s.log.Warn("redis persist batch", zap.Error(err), zap.Int("batch_size", len(pending)))
+		for _, pp := range pending {
+			pp.msg.Nak()
+		}
+		return 
+	}
+
+	for _, pp := range pending {
+		pp.msg.Ack()
+	}
+}
+func (s *Subscriber) kvFor(r ProcessedResult) []store.KV {
 	now := time.Now().UTC()
 
 	switch r.EventType {
@@ -139,21 +217,32 @@ func (s *Subscriber) persist(ctx context.Context, r ProcessedResult) error {
 		topRaw, _ := r.Metrics["top_by_volume"].([]any)
 		top := anyToStrings(topRaw)
 
-		if err := s.store.SetTicker(ctx, ticker, store.MetricSnapshot {
-			Key: 		ticker, 
-			Price: 		price, 
-			MovingAvg: 	avg, 
-			Volatility: vol, 
-			UpdatedAt: 	now,
-		}); err != nil {
-			return err 
+		return []store.KV {
+			{
+				Key: store.TickerKey(ticker),
+				Value: store.MetricSnapshot{
+					Key: ticker, 
+					Price: price, 
+					MovingAvg: avg,
+					Volatility: vol, 
+					UpdatedAt: now, 
+				},
+			},
+			{
+				Key: store.TopKKey("stock"),
+				Value: top,
+			},
 		}
-		return s.store.SetTopK(ctx, "stock", top)
 		
 	case model.EventTypeClick:
 		topRaw, _ := r.Metrics["top_elements"].([]any)
 		top := anyToStrings(topRaw)
-		return s.store.SetTopK(ctx, "element", top)
+		return []store.KV {
+			{
+				Key: store.TopKKey("element"),
+				Value: top, 
+			},
+		}
 
 	case model.EventTypeTelemetry:
 		srv, _ := r.Metrics["service"].(string)
@@ -164,14 +253,21 @@ func (s *Subscriber) persist(ctx context.Context, r ProcessedResult) error {
 		avg, _ := r.Metrics["moving_avg"].(float64)
 		vol, _ := r.Metrics["volatility"].(float64)
 		val, _ := r.Metrics["value"].(float64)
+		key := srv + "." + metric 
 
-		return s.store.SetTelemetry(ctx, srv+"."+metric, store.MetricSnapshot {
-			Key: srv + "." + metric, 
-			MovingAvg: avg, 
-			Volatility: vol, 
-			UpdatedAt: now, 
-			Extra: map[string]any{"value": val, "unit": r.Metrics["unit"]},
-		})
+		return []store.KV {
+			{
+				Key: store.TelemetryKey(key), 
+				Value: store.MetricSnapshot {
+					Key: key, 
+					MovingAvg: avg, 
+					Volatility: vol, 
+					UpdatedAt: now, 
+					Extra: map[string] any{"value": val, "unit": r.Metrics["unit"]}, 
+				},
+			},
+		}
+		
 	}
 	return nil 
 }

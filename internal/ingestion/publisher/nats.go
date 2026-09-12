@@ -6,8 +6,10 @@ import(
 	"fmt"
 	"context"
 	"encoding/json"
+	"sync/atomic"
 
 	"github.com/xyn3x/stockflow/pkg/model"
+	"github.com/xyn3x/stockflow/pkg/metrics"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"go.uber.org/zap"
@@ -32,16 +34,17 @@ type Publisher struct {
 	log 	*zap.Logger 
 	js 		jetstream.JetStream 
 	nc 		*nats.Conn
+	m 		*metrics.Metrics
 
 	mu 		sync.Mutex 
 	batch	[]model.Event 
 	flushCh	chan struct{}
 
-	published 	uint64 
-	dropped 	uint64
+	published 	atomic.Uint64  
+	dropped 	atomic.Uint64 
 }
 
-func New(cfg Config, log *zap.Logger) (*Publisher, error) {
+func New(cfg Config, log *zap.Logger, m *metrics.Metrics) (*Publisher, error) {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 100 
 	}
@@ -83,6 +86,7 @@ func New(cfg Config, log *zap.Logger) (*Publisher, error) {
 		log: 		log, 
 		js: 		js, 
 		nc: 		nc, 
+		m:			m,
 		batch: 		make([]model.Event, 0, cfg.BatchSize),
 		flushCh: 	make(chan struct{}, 1),
 	}
@@ -147,7 +151,9 @@ func (p *Publisher) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			p.flush(ctx)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+			defer cancel()
+			p.flush(shutdownCtx)
 			return 
 		case <-ticker.C:
 			p.flush(ctx)
@@ -155,6 +161,13 @@ func (p *Publisher) Run(ctx context.Context) {
 			p.flush(ctx)
 		}
 	}
+}
+
+type pendingAck struct {
+	id 			string 
+	eventType 	model.EventType
+	subject 	string 
+	future 		jetstream.PubAckFuture
 }
 
 func (p *Publisher) flush(ctx context.Context) {
@@ -166,33 +179,63 @@ func (p *Publisher) flush(ctx context.Context) {
 	toFlush := p.batch
 	p.batch = make([]model.Event, 0, p.cfg.BatchSize)
 	p.mu.Unlock()
-
+	
+	pending := make([]pendingAck, 0, len(toFlush))
+	
 	for _, e := range toFlush {
 		subj := subjectFor(e)
 		data, err := json.Marshal(e)
 		if err != nil {
 			p.log.Error("Marshal event error", zap.String("id", e.ID), zap.Error(err))
-			p.dropped++
+			p.dropped.Add(1)
+			p.m.EventsDropped.WithLabelValues("ingestion", "dropped").Inc()
 			continue 
 		}
 
-		pubCtx, cancel := context.WithTimeout(ctx, 5 * time.Second)
-		_, err = p.js.Publish(pubCtx, subj, data)
-		cancel()
+		future, err := p.js.PublishAsync(subj, data)
 
 		if err != nil {
 			p.log.Error("Nats publish error", zap.String("subject", subj), zap.String("id", e.ID), zap.Error(err))
-			p.dropped++
+			p.dropped.Add(1)
+			p.m.EventsDropped.WithLabelValues("ingestion", "dropped").Inc()
 			continue 
 		}
-		p.published++
+		pending = append(pending, pendingAck{id : e.ID, eventType : e.Type, subject : subj, future : future})
 	}
 
+	if len(pending) == 0 {
+		return 
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, 5 * time.Second)
+	defer cancel()
+
+	select {
+	case <-p.js.PublishAsyncComplete():
+	case <-waitCtx.Done():
+		p.log.Warn("Timed out for waiting batch acks", zap.Int("still_pending", p.js.PublishAsyncPending()))
+	}
+
+	for _, pa := range pending {
+		select {
+		case <-pa.future.Ok():
+			p.published.Add(1)
+			p.m.EventsTotal.WithLabelValues("ingestion", string(pa.eventType), "published").Inc()
+		case err := <-pa.future.Err():
+			p.log.Error("Nats publish ack error", zap.String("subject", pa.subject), zap.String("id", pa.id), zap.Error(err))
+			p.dropped.Add(1)
+			p.m.EventsDropped.WithLabelValues("ingestion", "ack_dropped").Inc()
+		default: 
+			p.log.Warn("Nats publish ack timeout", zap.String("subject", pa.subject), zap.String("id", pa.id))
+			p.dropped.Add(1)
+			p.m.EventsDropped.WithLabelValues("ingestion", "ack_timeout").Inc()
+		}
+	}
 	if len(toFlush) > 0 {
 		p.log.Debug("Flush Batch", 
 			zap.Int("count", len(toFlush)), 
-			zap.Uint64("total_dropped", p.dropped), 
-			zap.Uint64("total_published", p.published))
+			zap.Uint64("total_dropped", p.dropped.Load()), 
+			zap.Uint64("total_published", p.published.Load()))
 	}
 }
 
@@ -207,5 +250,5 @@ func (p *Publisher) Close() {
 }
 
 func (p *Publisher) Stats() (published, dropped uint64) {
-	return p.published, p.dropped
+	return p.published.Load(), p.dropped.Load()
 }

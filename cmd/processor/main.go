@@ -46,7 +46,7 @@ func main() {
 		FetchBatch:		cfg.Worker.FetchBatch,
 		FetchTimeout:	cfg.Worker.FetchTimeout,
 	}
-	wr, err := worker.New(wrCfg, pl, log, m)
+	wr, err := worker.New(wrCfg, pl, log, m, 8)
 	if err != nil {
 		log.Fatal("error: worker initialization", zap.Error(err))
 	}

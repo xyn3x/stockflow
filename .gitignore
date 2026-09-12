@@ -9,6 +9,7 @@
 *.dylib
 .DS_Store
 **/.DS_Store
+configs 
 
 # Test binary, built with `go test -c`
 *.test
@@ -33,4 +34,3 @@ go.work.sum
 # .idea/
 .vscode/
 
-configs

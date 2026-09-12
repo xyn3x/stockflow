@@ -10,7 +10,6 @@ import(
 )
 
 const(
-	keyLastResult 	= "result:%s"
 	keyTickerState	= "ticker:%s"
 	keyTopK 		= "topk:%s"
 	keyTelemetry 	= "telemetry:%s"
@@ -29,6 +28,12 @@ type MetricSnapshot struct {
 type Store struct {
 	rdb 	*redis.Client 
 	ttl		time.Duration
+}
+
+type KV struct {
+	Key 	string 
+	Value 	any 
+	TTL 	time.Duration
 }
 
 func New(addr, password string, db int) *Store {
@@ -110,6 +115,43 @@ func (s *Store) GetTelemetry(ctx context.Context, key string) (*MetricSnapshot, 
 		return nil, fmt.Errorf("json unmarshal telemetry %s: %w", key, err)
 	}
 	return &snap, nil 
+}
+
+func (s *Store) BatchSet(ctx context.Context, items []KV) error {
+	if len(items) == 0 {
+		return nil 
+	}
+
+	pipe := s.rdb.Pipeline()
+	for _, it := range items {
+		data, err := json.Marshal(it.Value)
+		if err != nil {
+			return fmt.Errorf("marshal eror %s : %w", it.Key, err)
+		}
+		ttl := it.TTL 
+		if ttl == 0 {
+			ttl = s.ttl 
+		}
+		pipe.Set(ctx, it.Key, data, ttl)
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("batch set exec: %w", err)
+	}
+	return nil 
+}
+
+func TickerKey(ticker string) string {
+	return fmt.Sprintf(keyTickerState, ticker)
+}
+
+func TopKKey(category string) string {
+	return fmt.Sprintf(keyTopK, category)
+}
+
+func TelemetryKey(key string) string {
+	return fmt.Sprintf(keyTelemetry, key)
 }
 
 func (s *Store) Close() error {

@@ -21,8 +21,10 @@ type Result struct {
 type Pipeline struct {
 	log 		*zap.Logger 
 	movingAvg 	*aggregation.MovingAverage 
-	topK 		*aggregation.TopK 
 	volatility 	*aggregation.Volatility 
+	topKVolume  *aggregation.TopK 
+	topKPages   *aggregation.TopK  
+	topKElements *aggregation.TopK 
 	throughput 	*metrics.Throughput 
 	latency 	*metrics.Latency
 }
@@ -31,8 +33,10 @@ func New(windowSz, k int, log *zap.Logger) *Pipeline {
 	return &Pipeline {
 		log: 		log, 
 		movingAvg: 	aggregation.NewMovingAverage(windowSz), 
-		topK: 		aggregation.NewTopK(k), 
 		volatility: aggregation.NewVolatility(), 
+		topKVolume:  aggregation.NewTopK(k), 
+		topKPages:   aggregation.NewTopK(k), 
+		topKElements: aggregation.NewTopK(k), 
 		throughput: metrics.NewThroughput(), 
 		latency: 	metrics.NewLatency(),
 	}
@@ -81,7 +85,7 @@ func (p *Pipeline) processStock(event model.Event) (map[string] any, error) {
 
 	avg := p.movingAvg.Add(payload.Ticker, payload.Price)
 	vol := p.volatility.Add(payload.Ticker, payload.Price)
-	top := p.topK.Add(payload.Ticker, payload.Price)
+	top := p.topKVolume.Add(payload.Ticker, payload.Volume)
 
 	topTickers := make([]string, len(top))
 	for pos, cur := range top {
@@ -103,8 +107,8 @@ func (p *Pipeline) processClick(event model.Event) (map[string] any, error) {
 		return nil, fmt.Errorf("json unmarshal: encode click payload: %w", err)
 	}
 
-	p.topK.Add("page:"+payload.PageURL, 1)
-	top := p.topK.Add("element:"+payload.Element, 1)
+	p.topKPages.Add(payload.PageURL, 1)
+	top := p.topKElements.Add(payload.Element, 1)
 
 	topElements := make([]string, len(top))
 	for pos, cur := range top {

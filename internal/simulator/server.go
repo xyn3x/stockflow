@@ -70,7 +70,7 @@ func (s *Server) broadcast(event model.Event) {
 
 	if err != nil {
 		s.log.Error("JSON Marshal error occured", zap.Error(err))
-		s.m.EventsDropped.WithLabelValues("simulator", "parse_error").Inc()
+		s.m.EventsDropped.WithLabelValues("simulator", "dropped").Inc()
 		return 
 	}
 
@@ -164,12 +164,14 @@ func (s *Server) readPump(c *client) {
 func (s *Server) register(c *client) {
 	s.mu.Lock()
 	s.clients[c] = struct{}{} 
+	s.m.WSClients.Inc()
 	s.mu.Unlock()
 }
 
 func (s *Server) unregister(c *client) {
 	s.mu.Lock()
 	delete(s.clients, c) 
+	s.m.WSClients.Dec()
 	s.mu.Unlock()
 }
 

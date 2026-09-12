@@ -5,6 +5,7 @@ import(
 	"encoding/json"
 	"time"
 	"fmt"
+	"sync"
 
 	"github.com/xyn3x/stockflow/internal/processor/pipeline"
 	"github.com/xyn3x/stockflow/pkg/model"
@@ -32,10 +33,18 @@ type Worker struct {
 	nc 			*nats.Conn
 	js 			jetstream.JetStream 
 	m			*metrics.Metrics
+	numWorkers 	int
 	consumer	jetstream.Consumer
 }
 
-func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger, m *metrics.Metrics) (*Worker, error) {
+type pendingPublish struct {
+	msg			jetstream.Msg 
+	id			string 
+	eventType 	model.EventType 
+	future 		jetstream.PubAckFuture
+}
+
+func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger, m *metrics.Metrics, numWrk int) (*Worker, error) {
 	if cfg.FetchBatch <= 0 {
 		cfg.FetchBatch = 50 
 	}
@@ -77,6 +86,7 @@ func New(cfg Config, pl *pipeline.Pipeline, log *zap.Logger, m *metrics.Metrics)
 		nc: 		nc, 
 		js: 		js, 
 		m:			m,
+		numWorkers: numWrk,
 	}, nil
 }
 
@@ -127,21 +137,51 @@ func (w *Worker) Run(ctx context.Context) error {
 			w.log.Warn("fetch error", zap.Error(err))
 			continue 
 		}
-		for msg := range msgs.Messages() {
-			w.handleMessage(msg)
+
+		msgCh := make(chan jetstream.Msg, w.cfg.FetchBatch)
+		pendingCh := make(chan pendingPublish, w.cfg.FetchBatch)
+		 
+		var wg sync.WaitGroup 
+		for i := 0; i < w.numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for msg := range msgCh {
+					if pp, ok := w.processMessage(msg); ok {
+						pendingCh <- pp
+					}
+				}
+			}()
 		}
+
+		for msg := range msgs.Messages() {
+			msgCh <- msg 
+		}
+		close(msgCh)
+
+		go func() {
+			wg.Wait()
+			close(pendingCh)	
+		}()
+
+		pending := make([]pendingPublish, 0, w.cfg.FetchBatch)
+		for pp := range pendingCh {
+			pending = append(pending, pp)
+		}
+
 		if err := msgs.Error(); err != nil {
 			w.log.Warn("messages error", zap.Error(err))
 		}
+		w.publishBatch(pending)
 	}
 }
 
-func (w *Worker) handleMessage(msg jetstream.Msg) {
+func (w *Worker) processMessage(msg jetstream.Msg) (pendingPublish, bool) {
 	var event model.Event 
 	if err := json.Unmarshal(msg.Data(), &event); err != nil {
 		w.log.Warn("json unmarshal error", zap.Error(err))
 		msg.Nak()
-		return 
+		return pendingPublish{}, false
 	}
 
 	timer := prometheus.NewTimer(
@@ -155,26 +195,72 @@ func (w *Worker) handleMessage(msg jetstream.Msg) {
 			zap.String("id", event.ID), 
 			zap.String("type", string(event.Type)), 
 			zap.Error(err))
-		w.m.EventsDropped.WithLabelValues("processor", "pipeline_process_error").Inc()
+		w.m.EventsDropped.WithLabelValues("processor", "dropped").Inc()
 		msg.Nak()
-		return 
+		return pendingPublish{}, false
 	}
 
 	data, err := json.Marshal(res)
-	if err == nil {
-		pubCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		w.js.Publish(pubCtx, "events.processed", data)
+	if err != nil {
+		w.log.Error("marshal error", 
+			zap.String("id", event.ID), 
+			zap.String("type", string(event.Type)), 
+			zap.Error(err))
+		w.m.EventsDropped.WithLabelValues("processor", "dropped").Inc()
+		msg.Nak()
+		return pendingPublish{}, false
 	}
 	
+	future, err := w.js.PublishAsync("events.processed", data)
+
+	if err != nil {
+		w.log.Error("js async publisher error", 
+			zap.String("id", event.ID), 
+			zap.String("type", string(event.Type)), 
+			zap.Error(err))
+		w.m.EventsDropped.WithLabelValues("processor", "dropped").Inc()
+		msg.Nak()
+		return pendingPublish{}, false
+	}
+
 	w.log.Debug("event processed", 
 		zap.String("id", res.EventID),
 		zap.String("type", string(res.EventType)), 
 		zap.Any("metrics", res.Metrics))
 	w.m.EventsTotal.WithLabelValues("processor", string(event.Type), "processed").Inc()
-	msg.Ack()
+	return pendingPublish{msg : msg, id : res.EventID, eventType: res.EventType, future : future}, true
 }
 
+func (w *Worker) publishBatch(pending []pendingPublish) {
+	if len(pending) == 0 {
+		return 
+	}
+
+	waitCtx, cancel := context.WithTimeout(context.Background(), 5 * time.Second)
+	defer cancel()
+
+	select {
+	case <-w.js.PublishAsyncComplete():
+	case <-waitCtx.Done():
+		w.log.Warn("timed out waiting processed batch acks", zap.Int("still_pending", w.js.PublishAsyncPending()))
+	}
+
+	for _, pp := range pending {
+		select {
+		case <-pp.future.Ok():
+			w.m.EventsTotal.WithLabelValues("processor", string(pp.eventType), "published").Inc()
+			pp.msg.Ack()
+		case err := <-pp.future.Err():
+			w.log.Error("Nats publish ack error", zap.String("id", pp.id), zap.Error(err))
+			w.m.EventsDropped.WithLabelValues("processor", "ack_dropped").Inc()
+			pp.msg.Nak()
+		default:
+			w.log.Warn("Nats publish ack timeout", zap.String("id", pp.id))
+			w.m.EventsDropped.WithLabelValues("processor", "ack_timeout").Inc()
+			pp.msg.Nak()
+		}
+	}
+}
 func (w *Worker) ensureConsumer(ctx context.Context) (jetstream.Consumer, error) {
 	consumerCfg := jetstream.ConsumerConfig {
 		Name: 			w.cfg.ConsumerName, 

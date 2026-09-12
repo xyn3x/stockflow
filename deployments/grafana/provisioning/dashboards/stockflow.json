@@ -89,7 +89,7 @@
         "id": 7,
         "title": "Total events processed",
         "type": "stat",
-        "gridPos": { "x": 12, "y": 16, "w": 6, "h": 4 },
+        "gridPos": { "x": 12, "y": 16, "w": 4, "h": 4 },
         "targets": [
           {
             "expr": "sum(stockflow_events_total{status=\"processed\"})",
@@ -101,10 +101,22 @@
         "id": 8,
         "title": "Total events published",
         "type": "stat",
-        "gridPos": { "x": 18, "y": 16, "w": 6, "h": 4 },
+        "gridPos": { "x": 16, "y": 16, "w": 4, "h": 4 },
         "targets": [
           {
             "expr": "sum(stockflow_events_total{status=\"published\"})",
+            "legendFormat": "total"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Total events dropped",
+        "type": "stat",
+        "gridPos": { "x": 20, "y": 16, "w": 4, "h": 4 },
+        "targets": [
+          {
+            "expr": "sum(events_dropped_total{status=\"dropped\"})",
             "legendFormat": "total"
           }
         ]

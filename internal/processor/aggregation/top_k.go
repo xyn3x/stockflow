@@ -7,23 +7,23 @@ import(
 
 type Entry struct {
 	Key 	string 
-	Score 	float64
+	Score 	int64
 }
 
 type TopK struct {
 	mu 		sync.Mutex 
 	k 		int 
-	scores 	map[string] float64
+	scores 	map[string] int64
 } 
 
 func NewTopK(k int) *TopK {
 	return &TopK {
 		k : 	k, 
-		scores: make(map[string] float64),
+		scores: make(map[string] int64),
 	}
 }
 
-func (t *TopK) Add(key string, value float64) []Entry {
+func (t *TopK) Add(key string, value int64) []Entry {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 

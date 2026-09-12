@@ -26,6 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatal("load config", zap.Error(err))
 	}
+	
 	st := store.New(cfg.Redis.Addr, cfg.Redis.Password, cfg.Redis.DB)
 	ctx, cancel := utils.WaitForShutdown()
 	defer cancel()
@@ -37,7 +38,6 @@ func main() {
 	log.Info("reddis connected", zap.String("addr", cfg.Redis.Addr))
 
 	m := metrics.New("api")
-
 	hub := apiws.NewHub(log, m)
 	go hub.Run(ctx)
 
@@ -48,7 +48,9 @@ func main() {
 		cfg.NATS.ConsumerName, 
 		hub, 
 		st, 
+		m,
 		log, 
+		8,
 	)
 	if err != nil {
 		log.Fatal("subscriber init", zap.Error(err))

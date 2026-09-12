@@ -25,7 +25,8 @@ func main() {
 		log.Fatal("Config is not loaded", zap.Error(err))
 	}
 
-	prc := parser.New(0)
+	prc := parser.New(0);
+	m := metrics.New("ingestion")
 
 	streamName := cfg.NATS.StreamName 
 	if streamName == "" {
@@ -35,6 +36,7 @@ func main() {
 	streamSubjects := cfg.NATS.StreamSubjects
 	if len(streamSubjects) == 0 {
 		streamSubjects = append(streamSubjects, "events.raw.>")
+		streamSubjects = append(streamSubjects, "events.processed")
 	}
 
 	pubCfg := publisher.Config {
@@ -48,7 +50,7 @@ func main() {
 		BatchSize:	 	cfg.Publisher.BatchSize, 
 		FlushTimeout: 	cfg.Publisher.FlushTimeout,
 	}
-	pub, err := publisher.New(pubCfg, log)
+	pub, err := publisher.New(pubCfg, log, m)
 	if err != nil {
 		log.Fatal("Publisher is not connected", zap.Error(err))
 	}
@@ -84,7 +86,6 @@ func main() {
 	log.Info("Ingestion service is starting", zap.String("source", cfg.Source.WebSocketURL), zap.String("nats", cfg.NATS.URL))
 	
 
-	m := metrics.New("ingestion")
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", metrics.Handler())
@@ -102,7 +103,7 @@ func main() {
 			zap.String("id", msg.Event.ID), 
 			zap.String("event", string(msg.Event.Type)), 
 			zap.Duration("latency", msg.ParseLatency))
-		m.EventsTotal.WithLabelValues("ingestion", string(msg.Event.Type), "published").Inc()
+		m.EventsTotal.WithLabelValues("ingestion", string(msg.Event.Type), "recieved").Inc()
 		pub.Publish(msg.Event)
 	}
 
